@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Guardian — Intelligent Traffic Surveillance</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+<style>
+/* ── Reset & base ───────────────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:       #020912;
+  --surface:  #050f1f;
+  --card:     #071525;
+  --card2:    #091930;
+  --border:   rgba(0,180,255,.15);
+  --border-b: rgba(0,220,255,.5);
+  --accent:   #00c8ff;
+  --accent2:  #00ffd4;
+  --red:      #ff3b55;
+  --orange:   #ff8c00;
+  --green:    #00d47e;
+  --yellow:   #ffd60a;
+  --text:     #c8d8ea;
+  --dim:      #3a5068;
+  --font-hud: 'Rajdhani',sans-serif;
+  --font-ui:  'Inter',sans-serif;
+  --font-mono:'JetBrains Mono',monospace;
+}
+html,body{height:100%;overflow:hidden}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:var(--font-ui);
+  display:flex;
+  flex-direction:column;
+}
+
+/* ── Scrollbar ──────────────────────────────────────────────────── */
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(0,180,255,.25);border-radius:2px}
+
+/* ── Keyframes ──────────────────────────────────────────────────── */
+@keyframes pulse-dot{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(0,212,126,.6)}50%{opacity:.7;box-shadow:0 0 0 6px rgba(0,212,126,0)}}
+@keyframes fadein{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes slideright{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:none}}
+@keyframes glow-pulse{0%,100%{text-shadow:0 0 10px var(--accent)}50%{text-shadow:0 0 25px var(--accent),0 0 50px rgba(0,200,255,.3)}}
+@keyframes border-glow{0%,100%{border-color:rgba(0,180,255,.15)}50%{border-color:rgba(0,180,255,.5)}}
+@keyframes countup{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:scale(1)}}
+@keyframes alert-in{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
+@keyframes corner-blink{0%,100%{opacity:.8}50%{opacity:.3}}
+
+/* ══════════════════════════════════════════════════════════════════
+   HEADER
+══════════════════════════════════════════════════════════════════ */
+header{
+  flex-shrink:0;
+  display:flex;
+  align-items:center;
+  gap:16px;
+  padding:10px 20px;
+  background:linear-gradient(90deg,#040e20 0%,#071830 100%);
+  border-bottom:1px solid var(--border);
+  position:relative;
+  z-index:10;
+}
+header::after{
+  content:'';
+  position:absolute;
+  bottom:-1px;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--accent),transparent);
+  opacity:.4;
+}
+
+.logo{
+  display:flex;align-items:center;gap:10px;
+  font-family:var(--font-hud);
+  font-size:1.45rem;
+  font-weight:700;
+  letter-spacing:.12em;
+  color:#fff;
+}
+.logo-icon{
+  width:34px;height:34px;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  border-radius:8px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.1rem;
+  box-shadow:0 0 14px rgba(0,200,255,.45);
+}
+.logo-sub{
+  font-size:.55rem;
+  letter-spacing:.2em;
+  color:var(--dim);
+  display:block;
+  margin-top:-2px;
+  font-family:var(--font-ui);
+  font-weight:500;
+}
+
+.header-sep{flex:1}
+
+/* Live / idle badge */
+.live-badge{
+  display:flex;align-items:center;gap:7px;
+  padding:5px 14px;
+  border-radius:999px;
+  border:1px solid var(--border);
+  background:var(--card);
+  font-size:.75rem;
+  font-weight:600;
+  letter-spacing:.06em;
+  color:var(--dim);
+  transition:all .3s;
+}
+.live-badge.active{
+  border-color:rgba(0,212,126,.4);
+  color:var(--green);
+  background:rgba(0,212,126,.08);
+}
+.live-dot{
+  width:8px;height:8px;border-radius:50%;
+  background:var(--dim);
+  transition:background .3s;
+}
+.live-badge.active .live-dot{
+  background:var(--green);
+  animation:pulse-dot 1.4s infinite;
+}
+
+/* Frame counter */
+.frame-counter{
+  font-family:var(--font-mono);
+  font-size:.72rem;
+  color:var(--dim);
+  padding:5px 12px;
+  border:1px solid var(--border);
+  border-radius:6px;
+  background:var(--card);
+  min-width:110px;
+  text-align:center;
+}
+.frame-counter span{color:var(--accent);font-weight:600}
+
+/* Weather pill */
+.weather-pill{
+  display:flex;align-items:center;gap:8px;
+  padding:5px 14px;
+  border-radius:999px;
+  border:1px solid var(--border);
+  background:var(--card);
+  font-size:.75rem;
+  font-weight:600;
+  color:var(--yellow);
+  cursor:pointer;
+  transition:border-color .2s;
+}
+.weather-pill:hover{border-color:rgba(255,214,10,.4)}
+.weather-icon{font-size:1rem}
+
+/* ══════════════════════════════════════════════════════════════════
+   STATS BAR
+══════════════════════════════════════════════════════════════════ */
+.stats-bar{
+  flex-shrink:0;
+  display:flex;
+  gap:10px;
+  padding:10px 20px;
+  border-bottom:1px solid var(--border);
+  background:var(--surface);
+}
+.stat{
+  flex:1;
+  display:flex;align-items:center;gap:12px;
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:10px 16px;
+  transition:border-color .3s;
+  position:relative;
+  overflow:hidden;
+}
+.stat::before{
+  content:'';
+  position:absolute;top:0;left:0;bottom:0;width:3px;
+  border-radius:3px 0 0 3px;
+}
+.stat.blue::before{background:var(--accent)}
+.stat.green::before{background:var(--green)}
+.stat.red::before{background:var(--red)}
+.stat.orange::before{background:var(--orange)}
+.stat.yellow::before{background:var(--yellow)}
+.stat-icon{font-size:1.4rem;opacity:.85}
+.stat-body{display:flex;flex-direction:column}
+.stat-val{
+  font-family:var(--font-hud);
+  font-size:1.55rem;
+  font-weight:700;
+  line-height:1;
+}
+.stat.blue .stat-val{color:var(--accent)}
+.stat.green .stat-val{color:var(--green)}
+.stat.red .stat-val{color:var(--red)}
+.stat.orange .stat-val{color:var(--orange)}
+.stat.yellow .stat-val{color:var(--yellow)}
+.stat-lbl{font-size:.65rem;color:var(--dim);font-weight:500;letter-spacing:.05em;margin-top:2px;text-transform:uppercase}
+
+/* ══════════════════════════════════════════════════════════════════
+   MAIN LAYOUT
+══════════════════════════════════════════════════════════════════ */
+.main{
+  flex:1;
+  display:grid;
+  grid-template-columns:1fr 340px;
+  overflow:hidden;
+  min-height:0;
+}
+
+/* ── Video panel ─────────────────────────────────────────────── */
+.video-panel{
+  display:flex;flex-direction:column;
+  padding:14px;
+  gap:12px;
+  overflow:hidden;
+  background:var(--bg);
+}
+
+.video-wrap{
+  flex:1;
+  position:relative;
+  background:#000;
+  border-radius:12px;
+  overflow:hidden;
+  border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;
+  animation:border-glow 3s infinite;
+}
+
+/* No scan line */
+
+/* Corner brackets */
+.corner{
+  position:absolute;width:18px;height:18px;
+  border-color:var(--accent);
+  border-style:solid;
+  opacity:.7;
+  animation:corner-blink 2.5s infinite;
+  z-index:2;pointer-events:none;
+}
+.corner.tl{top:8px;left:8px;border-width:2px 0 0 2px;border-radius:2px 0 0 0}
+.corner.tr{top:8px;right:8px;border-width:2px 2px 0 0;border-radius:0 2px 0 0}
+.corner.bl{bottom:8px;left:8px;border-width:0 0 2px 2px;border-radius:0 0 0 2px}
+.corner.br{bottom:8px;right:8px;border-width:0 2px 2px 0;border-radius:0 0 2px 0}
+
+#stream{
+  max-width:100%;max-height:100%;
+  object-fit:contain;display:block;
+  border-radius:11px;
+}
+
+/* No-signal overlay */
+.no-signal{
+  position:absolute;inset:0;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:12px;
+  background:radial-gradient(ellipse at center,#071525 0%,#020912 70%);
+}
+.no-signal-icon{font-size:3rem;opacity:.2}
+.no-signal-text{font-family:var(--font-hud);font-size:1.1rem;font-weight:600;letter-spacing:.1em;color:var(--dim)}
+.no-signal-sub{font-size:.75rem;color:rgba(58,80,104,.8)}
+.no-signal.hidden{display:none}
+
+/* ── Controls ────────────────────────────────────────────────── */
+.controls{
+  flex-shrink:0;
+  display:flex;align-items:center;gap:10px;
+  flex-wrap:wrap;
+}
+
+.upload-btn{
+  display:inline-flex;align-items:center;gap:7px;
+  padding:9px 18px;
+  background:linear-gradient(135deg,#0a2a50,#0d3566);
+  border:1px solid rgba(0,180,255,.3);
+  border-radius:8px;
+  color:var(--accent);
+  font-size:.8rem;font-weight:600;
+  cursor:pointer;
+  transition:all .2s;
+  white-space:nowrap;
+}
+.upload-btn:hover{background:linear-gradient(135deg,#0d3566,#1046a0);border-color:var(--accent)}
+#file-input{display:none}
+
+.file-name{
+  font-size:.75rem;color:var(--dim);
+  flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;
+  padding:9px 12px;
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:8px;
+  font-family:var(--font-mono);
+}
+
+.btn{
+  display:inline-flex;align-items:center;gap:7px;
+  padding:9px 22px;
+  border:none;border-radius:8px;
+  font-size:.8rem;font-weight:700;
+  cursor:pointer;letter-spacing:.04em;
+  transition:all .2s;
+  white-space:nowrap;
+}
+.btn:disabled{opacity:.3;cursor:not-allowed}
+
+.btn-start{
+  background:linear-gradient(135deg,#0a5c30,#0f8040);
+  color:#fff;
+  box-shadow:0 0 0 transparent;
+}
+.btn-start:not(:disabled):hover{
+  background:linear-gradient(135deg,#0f8040,#12a050);
+  box-shadow:0 0 14px rgba(0,212,126,.35);
+}
+
+.btn-stop{
+  background:linear-gradient(135deg,#6b0a18,#a01224);
+  color:#fff;
+}
+.btn-stop:not(:disabled):hover{
+  background:linear-gradient(135deg,#a01224,#c4162d);
+  box-shadow:0 0 14px rgba(255,59,85,.35);
+}
+
+.btn-cam{
+  background:linear-gradient(135deg,#1a1a3e,#252560);
+  color:#a0a0ff;
+  border:1px solid rgba(160,160,255,.2);
+}
+.btn-cam:not(:disabled):hover{border-color:rgba(160,160,255,.5);color:#c0c0ff}
+
+.progress-bar{
+  height:3px;width:100%;
+  background:var(--border);
+  border-radius:2px;
+  overflow:hidden;
+  display:none;
+}
+.progress-bar.visible{display:block}
+.progress-fill{
+  height:100%;
+  background:linear-gradient(90deg,var(--accent),var(--accent2));
+  width:0%;
+  transition:width .3s;
+  border-radius:2px;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   SIDEBAR
+══════════════════════════════════════════════════════════════════ */
+.sidebar{
+  display:flex;flex-direction:column;
+  border-left:1px solid var(--border);
+  background:var(--surface);
+  overflow:hidden;
+}
+
+.panel{
+  border-bottom:1px solid var(--border);
+  flex-shrink:0;
+}
+.panel-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 16px;
+  background:var(--card);
+}
+.panel-title{
+  font-family:var(--font-hud);
+  font-size:.75rem;
+  font-weight:700;
+  letter-spacing:.14em;
+  color:var(--dim);
+  text-transform:uppercase;
+  display:flex;align-items:center;gap:7px;
+}
+.panel-title-icon{font-size:.95rem;opacity:.7}
+.panel-badge{
+  font-family:var(--font-mono);
+  font-size:.65rem;
+  padding:2px 8px;
+  border-radius:999px;
+  background:var(--card2);
+  color:var(--accent);
+  border:1px solid var(--border);
+}
+
+/* ── Alert feed ──────────────────────────────────────────────── */
+.alert-list{
+  max-height:170px;
+  overflow-y:auto;
+  padding:6px 10px;
+}
+.alert-item{
+  display:flex;align-items:flex-start;gap:9px;
+  padding:7px 10px;
+  margin-bottom:5px;
+  border-radius:8px;
+  font-size:.75rem;
+  animation:alert-in .25s ease;
+  position:relative;
+  overflow:hidden;
+}
+.alert-item::before{
+  content:'';
+  position:absolute;top:0;left:0;bottom:0;width:3px;
+}
+.alert-item.DANGER{background:rgba(255,59,85,.08);color:#ffa0aa}
+.alert-item.DANGER::before{background:var(--red)}
+.alert-item.WARNING{background:rgba(255,140,0,.08);color:#ffbe70}
+.alert-item.WARNING::before{background:var(--orange)}
+.alert-item.CRITICAL{background:rgba(255,0,0,.12);color:#ff8090;animation:alert-in .25s ease,border-glow .8s infinite}
+.alert-item.CRITICAL::before{background:#ff0033}
+.alert-item.CAUTION{background:rgba(0,200,255,.06);color:#80d0ff}
+.alert-item.CAUTION::before{background:var(--accent)}
+.alert-icon{font-size:1rem;flex-shrink:0;margin-top:1px}
+.alert-body{flex:1}
+.alert-title{font-weight:700;font-size:.76rem;font-family:var(--font-hud);letter-spacing:.04em}
+.alert-detail{font-size:.68rem;opacity:.75;margin-top:1px}
+.alert-time{font-family:var(--font-mono);font-size:.62rem;color:var(--dim);flex-shrink:0}
+.alert-empty{text-align:center;padding:16px;color:var(--dim);font-size:.75rem}
+
+/* ── Plates panel ────────────────────────────────────────────── */
+.plates-list{
+  flex:1;
+  overflow-y:auto;
+  padding:8px 10px;
+}
+.plate-card{
+  display:flex;align-items:center;gap:10px;
+  padding:8px 12px;
+  margin-bottom:6px;
+  border-radius:9px;
+  background:var(--card);
+  border:1px solid var(--border);
+  animation:fadein .3s ease;
+  transition:border-color .2s;
+  cursor:default;
+}
+.plate-card:hover{border-color:rgba(0,200,255,.35)}
+.plate-num{
+  font-family:var(--font-mono);
+  font-size:.9rem;
+  font-weight:600;
+  color:var(--accent2);
+  letter-spacing:.06em;
+  flex:1;
+}
+.plate-type{
+  font-size:.65rem;
+  color:var(--dim);
+  text-transform:capitalize;
+}
+.score-chip{
+  font-family:var(--font-hud);
+  font-size:.78rem;
+  font-weight:700;
+  padding:3px 10px;
+  border-radius:999px;
+  letter-spacing:.04em;
+}
+.score-chip.low {background:rgba(0,212,126,.12);color:var(--green);border:1px solid rgba(0,212,126,.3)}
+.score-chip.mid {background:rgba(255,140,0,.12);color:var(--orange);border:1px solid rgba(255,140,0,.3)}
+.score-chip.high{background:rgba(255,59,85,.14);color:var(--red);border:1px solid rgba(255,59,85,.3)}
+.plates-empty{text-align:center;padding:20px;color:var(--dim);font-size:.75rem}
+
+/* ── Weather panel ───────────────────────────────────────────── */
+.weather-panel{
+  flex-shrink:0;
+}
+.weather-detail{
+  padding:10px 16px 6px;
+  display:flex;align-items:center;gap:12px;
+}
+.weather-big{font-size:1.8rem}
+.weather-info{flex:1}
+.weather-cond{
+  font-family:var(--font-hud);
+  font-size:1rem;
+  font-weight:700;
+  letter-spacing:.08em;
+  color:#fff;
+}
+.weather-msg{font-size:.68rem;color:var(--dim);margin-top:2px;line-height:1.4}
+.weather-mult{
+  font-family:var(--font-hud);
+  font-size:1.4rem;
+  font-weight:700;
+  color:var(--yellow);
+}
+.weather-mult-lbl{font-size:.6rem;color:var(--dim);text-align:right;margin-top:-2px}
+
+.scene-grid{
+  display:flex;flex-wrap:wrap;gap:6px;
+  padding:8px 16px 12px;
+}
+.scene-btn{
+  flex:1;min-width:calc(33% - 8px);
+  display:flex;flex-direction:column;align-items:center;gap:2px;
+  padding:7px 8px;
+  border:1px solid var(--border);
+  border-radius:8px;
+  background:var(--card);
+  color:var(--dim);
+  font-size:.68rem;
+  font-weight:600;
+  cursor:pointer;
+  transition:all .2s;
+  font-family:var(--font-ui);
+}
+.scene-btn:hover{border-color:rgba(0,180,255,.4);color:var(--accent);background:rgba(0,180,255,.06)}
+.scene-btn.active{border-color:var(--yellow);color:var(--yellow);background:rgba(255,214,10,.07)}
+.scene-btn-icon{font-size:1.1rem;margin-bottom:1px}
+
+/* ── Upload progress toast ────────────────────────────────────── */
+.toast{
+  position:fixed;bottom:20px;right:20px;
+  padding:12px 20px;
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:10px;
+  font-size:.8rem;
+  color:var(--text);
+  display:flex;align-items:center;gap:10px;
+  box-shadow:0 8px 24px rgba(0,0,0,.5);
+  z-index:100;
+  animation:fadein .2s ease;
+  max-width:300px;
+}
+.toast.success{border-color:rgba(0,212,126,.4);color:var(--green)}
+.toast.error{border-color:rgba(255,59,85,.4);color:var(--red)}
+.toast.hidden{display:none}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════ HEADER ═════════════════════════════ -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">🛡</div>
+    <div>
+      GUARDIAN
+      <span class="logo-sub">INTELLIGENT TRAFFIC SURVEILLANCE</span>
+    </div>
+  </div>
+
+  <div class="header-sep"></div>
+
+  <div class="frame-counter">Frame <span id="hdr-frame">—</span></div>
+
+  <div class="weather-pill" id="weather-pill" title="Click to change scenario">
+    <span class="weather-icon" id="hdr-weather-icon">🌤</span>
+    <span id="hdr-weather-cond">CLEAR</span>
+    <span id="hdr-weather-mult" style="color:var(--dim);font-size:.68rem;">×1.0</span>
+  </div>
+
+  <div class="live-badge" id="live-badge">
+    <div class="live-dot"></div>
+    <span id="live-label">IDLE</span>
+  </div>
+</header>
+
+<!-- ══════════════════════ STATS BAR ══════════════════════════ -->
+<div class="stats-bar">
+  <div class="stat blue">
+    <div class="stat-icon">🚗</div>
+    <div class="stat-body">
+      <div class="stat-val" id="s-vehicles">0</div>
+      <div class="stat-lbl">Vehicles</div>
+    </div>
+  </div>
+  <div class="stat red">
+    <div class="stat-icon">⚠️</div>
+    <div class="stat-body">
+      <div class="stat-val" id="s-alerts">0</div>
+      <div class="stat-lbl">Alerts</div>
+    </div>
+  </div>
+  <div class="stat orange">
+    <div class="stat-icon">💥</div>
+    <div class="stat-body">
+      <div class="stat-val" id="s-collisions">0</div>
+      <div class="stat-lbl">Collision Warns</div>
+    </div>
+  </div>
+  <div class="stat green">
+    <div class="stat-icon">🔍</div>
+    <div class="stat-body">
+      <div class="stat-val" id="s-plates">0</div>
+      <div class="stat-lbl">Plates Read</div>
+    </div>
+  </div>
+  <div class="stat yellow">
+    <div class="stat-icon">📋</div>
+    <div class="stat-body">
+      <div class="stat-val" id="s-violations">0</div>
+      <div class="stat-lbl">Violations</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════ MAIN ═══════════════════════════════ -->
+<div class="main">
+
+  <!-- VIDEO PANEL -->
+  <div class="video-panel">
+    <div class="video-wrap" id="video-wrap">
+      <div class="corner tl"></div>
+      <div class="corner tr"></div>
+      <div class="corner bl"></div>
+      <div class="corner br"></div>
+
+      <!-- No-signal screen -->
+      <div class="no-signal" id="no-signal">
+        <div class="no-signal-icon">📡</div>
+        <div class="no-signal-text">NO VIDEO SOURCE</div>
+        <div class="no-signal-sub">Upload a video file or connect a camera to begin</div>
+      </div>
+
+      <img id="stream" style="display:none;max-width:100%;max-height:100%;border-radius:11px;object-fit:contain;"
+           alt="Guardian live feed" />
+    </div>
+
+    <!-- Progress bar -->
+    <div class="progress-bar" id="progress-bar">
+      <div class="progress-fill" id="progress-fill"></div>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls">
+      <label class="upload-btn">
+        <span>📂</span> Choose Video
+        <input type="file" id="file-input" accept="video/*"/>
+      </label>
+      <div class="file-name" id="file-name">No file selected</div>
+      <button class="btn btn-start" id="btn-start" disabled>▶&nbsp; Start</button>
+      <button class="btn btn-stop"  id="btn-stop"  disabled>■&nbsp; Stop</button>
+      <button class="btn btn-cam"   id="btn-cam">📷&nbsp; Camera</button>
+    </div>
+  </div>
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+
+    <!-- ALERTS -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title"><span class="panel-title-icon">🚨</span> Live Alerts</div>
+        <div class="panel-badge" id="alert-badge">0</div>
+      </div>
+      <div class="alert-list" id="alert-list">
+        <div class="alert-empty">No active alerts</div>
+      </div>
+    </div>
+
+    <!-- PLATES -->
+    <div class="panel" style="flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden">
+      <div class="panel-header">
+        <div class="panel-title"><span class="panel-title-icon">🔢</span> Detected Plates</div>
+        <div class="panel-badge" id="plate-badge">0</div>
+      </div>
+      <div class="plates-list" id="plate-list">
+        <div class="plates-empty">No plates detected yet</div>
+      </div>
+    </div>
+
+    <!-- WEATHER -->
+    <div class="panel weather-panel">
+      <div class="panel-header">
+        <div class="panel-title"><span class="panel-title-icon">🌦</span> Weather Context</div>
+      </div>
+      <div class="weather-detail">
+        <div class="weather-big" id="w-icon">🌤</div>
+        <div class="weather-info">
+          <div class="weather-cond" id="w-cond">CLEAR</div>
+          <div class="weather-msg" id="w-msg">Standard following distances apply.</div>
+        </div>
+        <div>
+          <div class="weather-mult" id="w-mult">×1.0</div>
+          <div class="weather-mult-lbl">THRESHOLD</div>
+        </div>
+      </div>
+      <div class="scene-grid">
+        <button class="scene-btn active" data-id="0"><span class="scene-btn-icon">☀️</span>Clear</button>
+        <button class="scene-btn" data-id="1"><span class="scene-btn-icon">🌧</span>Rain</button>
+        <button class="scene-btn" data-id="2"><span class="scene-btn-icon">🌁</span>Fog/Night</button>
+        <button class="scene-btn" data-id="3"><span class="scene-btn-icon">⛈</span>Heavy Rain</button>
+        <button class="scene-btn" data-id="4"><span class="scene-btn-icon">❄️</span>Snow</button>
+        <button class="scene-btn" data-id="5"><span class="scene-btn-icon">☁️</span>Cloudy</button>
+      </div>
+    </div>
+
+  </div><!-- /sidebar -->
+</div><!-- /main -->
+
+<!-- TOAST -->
+<div class="toast hidden" id="toast"></div>
+
+<script>
+/* ── State ───────────────────────────────────────────────────── */
+let ws = null
+let totalAlerts = 0, totalCollisions = 0, totalViolations = 0
+// plates: persists ALL plates seen during the entire session
+const plates = new Map()   // plate -> { score, class, firstSeen }
+let alertCount = 0
+const MAX_ALERTS = 30
+let videoReady = false
+
+/* ── Helpers ─────────────────────────────────────────────────── */
+const $ = id => document.getElementById(id)
+
+function showToast(msg, type = '') {
+  const t = $('toast')
+  t.className = `toast ${type}`
+  t.innerHTML = `<span>${type === 'success' ? '✅' : type === 'error' ? '❌' : 'ℹ️'}</span> ${msg}`
+  clearTimeout(t._timer)
+  t._timer = setTimeout(() => t.classList.add('hidden'), 3000)
+}
+
+function setLive(active) {
+  const badge = $('live-badge'), label = $('live-label')
+  if (active) {
+    badge.classList.add('active')
+    label.textContent = 'LIVE'
+  } else {
+    badge.classList.remove('active')
+    label.textContent = 'IDLE'
+  }
+}
+
+function animateCounter(el, val) {
+  const cur = parseInt(el.textContent) || 0
+  if (cur === val) return
+  el.style.animation = 'none'
+  el.offsetHeight  // reflow
+  el.style.animation = 'countup .2s ease'
+  el.textContent = val
+}
+
+const WEATHER_ICONS = {
+  clear:'☀️', cloudy:'☁️', rain:'🌧', heavy_rain:'⛈', fog:'🌁', snow:'❄️'
+}
+const ALERT_ICONS = { DANGER:'🔴', WARNING:'🟠', CRITICAL:'🆘', CAUTION:'🔵' }
+
+function fmtTime(d = new Date()) {
+  return d.toLocaleTimeString('en',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'})
+}
+
+/* ── WebSocket ───────────────────────────────────────────────── */
+function connectWS() {
+  ws = new WebSocket(`ws://${location.host}/ws/alerts`)
+
+  ws.onmessage = e => {
+    const d = JSON.parse(e.data)
+    if (d.type === 'video_ended') { setLive(false); showToast('Video processing complete', 'success'); return }
+    if (d.type !== 'frame') return
+
+    // Frame counter
+    $('hdr-frame').textContent = d.frame ?? '—'
+
+    // Vehicles
+    animateCounter($('s-vehicles'), d.vehicle_count ?? 0)
+
+    // Plates — accumulate ALL plates seen throughout the session
+    if (d.vehicles) {
+      let changed = false
+      d.vehicles.forEach(v => {
+        if (!v.plate) return
+        const existing = plates.get(v.plate)
+        if (!existing) {
+          plates.set(v.plate, { score: v.score, cls: v.class || 'vehicle', firstSeen: fmtTime() })
+          changed = true
+        } else if (v.score !== existing.score) {
+          existing.score = v.score
+          changed = true
+        }
+      })
+      if (changed || d.frame % 60 === 0) renderPlates()
+    }
+
+    // Alerts
+    const allAlerts = [
+      ...(d.distance_alerts||[]).map(a=>({...a,src:'distance'})),
+      ...(d.collision_alerts||[]).map(a=>({...a,src:'collision'})),
+    ].filter(a => a.level !== 'CAUTION')
+
+    if (allAlerts.length) {
+      totalAlerts += allAlerts.length
+      totalCollisions += (d.collision_alerts||[]).filter(a=>a.level==='CRITICAL').length
+      animateCounter($('s-alerts'), totalAlerts)
+      animateCounter($('s-collisions'), totalCollisions)
+      renderAlerts(allAlerts)
+    }
+
+    // Violations from behavior events
+    if (d.behavior_events?.length) {
+      totalViolations += d.behavior_events.length
+      animateCounter($('s-violations'), totalViolations)
+    }
+
+    // Weather
+    if (d.weather) updateWeatherUI(d.weather)
+  }
+
+  ws.onclose = () => setTimeout(connectWS, 2000)
+}
+
+/* ── Alerts ──────────────────────────────────────────────────── */
+function renderAlerts(newAlerts) {
+  const list = $('alert-list')
+  // Remove empty state
+  list.querySelectorAll('.alert-empty').forEach(e=>e.remove())
+
+  alertCount += newAlerts.length
+  $('alert-badge').textContent = alertCount
+
+  newAlerts.forEach(a => {
+    const div = document.createElement('div')
+    div.className = `alert-item ${a.level}`
+    const icon = ALERT_ICONS[a.level] || '⚠️'
+    const detail = a.distance_m != null
+      ? `Distance: <strong>${a.distance_m}m</strong>`
+      : a.ttc_seconds != null
+      ? `TTC: <strong>${a.ttc_seconds}s</strong>`
+      : ''
+    div.innerHTML = `
+      <div class="alert-icon">${icon}</div>
+      <div class="alert-body">
+        <div class="alert-title">${a.level} — ${a.src?.toUpperCase()}</div>
+        <div class="alert-detail">Vehicles: ${(a.vehicle_ids||[]).join(' & ')} ${detail ? '&nbsp;·&nbsp;' + detail : ''}</div>
+      </div>
+      <div class="alert-time">${fmtTime()}</div>`
+    list.insertBefore(div, list.firstChild)
+  })
+
+  // Trim
+  while (list.children.length > MAX_ALERTS) list.removeChild(list.lastChild)
+}
+
+/* ── Plates ──────────────────────────────────────────────────── */
+function renderPlates() {
+  const list = $('plate-list')
+  animateCounter($('s-plates'), plates.size)
+  $('plate-badge').textContent = plates.size
+
+  if (!plates.size) {
+    list.innerHTML = '<div class="plates-empty">Waiting for plates…<br><span style="font-size:.68rem;opacity:.5">Plates are read asynchronously — appears within a few seconds of a vehicle being tracked</span></div>'
+    return
+  }
+
+  // Sort by score desc (highest danger first)
+  const sorted = [...plates.entries()].sort((a, b) => b[1].score - a[1].score)
+  list.innerHTML = sorted.map(([plate, info]) => {
+    const s = info.score
+    const chip = s < 25 ? 'low' : s < 60 ? 'mid' : 'high'
+    return `<div class="plate-card">
+      <div style="flex:1;min-width:0">
+        <div class="plate-num">${plate}</div>
+        <div class="plate-type">${info.cls} &nbsp;·&nbsp; <span style="color:var(--dim)">${info.firstSeen || ''}</span></div>
+      </div>
+      <div class="score-chip ${chip}">${s}pts</div>
+    </div>`
+  }).join('')
+}
+
+/* ── Weather ─────────────────────────────────────────────────── */
+function updateWeatherUI(w) {
+  const icon = WEATHER_ICONS[w.condition] || '🌤'
+  $('hdr-weather-icon').textContent = icon
+  $('hdr-weather-cond').textContent = w.condition.toUpperCase()
+  $('hdr-weather-mult').textContent = `×${w.threshold_multiplier}`
+  $('w-icon').textContent = icon
+  $('w-cond').textContent = w.condition.toUpperCase()
+  $('w-msg').textContent = w.alert_message || ''
+  $('w-mult').textContent = `×${w.threshold_multiplier}`
+}
+
+/* ── File upload ─────────────────────────────────────────────── */
+$('file-input').addEventListener('change', async e => {
+  const file = e.target.files[0]
+  if (!file) return
+
+  $('file-name').textContent = file.name
+  $('btn-start').disabled = true
+  videoReady = false
+
+  const bar = $('progress-bar'), fill = $('progress-fill')
+  bar.classList.add('visible')
+  fill.style.width = '0%'
+
+  // Simulate upload progress while fetch runs
+  let prog = 0
+  const ticker = setInterval(() => {
+    prog = Math.min(prog + Math.random() * 18, 88)
+    fill.style.width = prog + '%'
+  }, 120)
+
+  try {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await fetch('/video/upload', { method:'POST', body:form })
+    clearInterval(ticker)
+    if (!res.ok) throw new Error('Upload failed')
+    fill.style.width = '100%'
+    setTimeout(() => bar.classList.remove('visible'), 600)
+    videoReady = true
+    $('btn-start').disabled = false
+    showToast(`Uploaded: ${file.name}`, 'success')
+  } catch (err) {
+    clearInterval(ticker)
+    bar.classList.remove('visible')
+    showToast('Upload failed — try again', 'error')
+  }
+})
+
+/* ── Start ───────────────────────────────────────────────────── */
+$('btn-start').addEventListener('click', async () => {
+  // Reset session counters
+  totalAlerts = 0; totalCollisions = 0; totalViolations = 0; alertCount = 0
+  plates.clear()
+  ;['s-alerts','s-collisions','s-violations','s-plates'].forEach(id => $( id).textContent = '0')
+  $('alert-list').innerHTML = '<div class="alert-empty">No active alerts</div>'
+  $('alert-badge').textContent = '0'
+  renderPlates()
+
+  const res = await fetch('/video/start', { method:'POST' })
+  if (!res.ok) { showToast((await res.json()).detail, 'error'); return }
+
+  setLive(true)
+  $('btn-stop').disabled = false
+  $('btn-start').disabled = true
+
+  // Show stream
+  const img = $('stream')
+  img.src = '/video/stream?' + Date.now()
+  img.style.display = 'block'
+  $('no-signal').classList.add('hidden')
+  showToast('Detection started', 'success')
+})
+
+/* ── Stop ────────────────────────────────────────────────────── */
+$('btn-stop').addEventListener('click', async () => {
+  await fetch('/video/stop', { method:'POST' })
+  setLive(false)
+  $('btn-stop').disabled = true
+  $('btn-start').disabled = !videoReady
+  showToast('Processing stopped')
+})
+
+/* ── Camera ──────────────────────────────────────────────────── */
+$('btn-cam').addEventListener('click', async () => {
+  totalAlerts = 0; totalCollisions = 0; totalViolations = 0; alertCount = 0
+  const res = await fetch('/video/camera/0', { method:'POST' })
+  if (!res.ok) { showToast('Camera not available', 'error'); return }
+  setLive(true)
+  $('btn-stop').disabled = false
+  $('btn-start').disabled = true
+  $('file-name').textContent = 'Live Camera (Device 0)'
+  const img = $('stream')
+  img.src = '/video/stream?' + Date.now()
+  img.style.display = 'block'
+  $('no-signal').classList.add('hidden')
+  showToast('Camera feed started', 'success')
+})
+
+/* ── Weather scenario buttons ────────────────────────────────── */
+document.querySelector('.scene-grid').addEventListener('click', async e => {
+  const btn = e.target.closest('.scene-btn')
+  if (!btn) return
+  document.querySelectorAll('.scene-btn').forEach(b => b.classList.remove('active'))
+  btn.classList.add('active')
+  const res = await fetch(`/weather/scenario/${btn.dataset.id}`, { method:'POST' })
+  const w = await res.json()
+  updateWeatherUI(w)
+})
+
+/* ── Boot: load weather ──────────────────────────────────────── */
+fetch('/weather').then(r => r.json()).then(updateWeatherUI).catch(()=>{})
+connectWS()
+</script>
+</body>
+</html>
