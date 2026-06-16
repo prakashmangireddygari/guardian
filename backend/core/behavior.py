@@ -94,21 +94,24 @@ class BehaviorScorer:
 
     def _detect_braking(self, tid: int) -> bool:
         hist = list(self.velocity_hist[tid])
-        if len(hist) < 6:
+        if len(hist) < 10:
             return False
         speeds = [np.hypot(vx, vy) for vx, vy in hist]
-        # Deceleration = change in speed per frame over last 5 frames
-        decel = (speeds[-1] - speeds[-6]) / 5
-        return decel < -4.0  # px/frame² threshold
+        # Must be moving (>3 px/frame) before the brake, then drop sharply
+        if speeds[-10] < 3.0:
+            return False
+        decel = (speeds[-1] - speeds[-10]) / 9
+        return decel < -8.0  # px/frame² — tightened from -4.0 to ignore jitter
 
     def _detect_weaving(self, tid: int) -> bool:
         hist = list(self.position_hist[tid])
-        if len(hist) < 10:
+        if len(hist) < 15:
             return False
-        xs = [p[0] for p in hist[-10:]]
+        xs = [p[0] for p in hist[-15:]]
         changes = sum(
             1 for k in range(1, len(xs) - 1)
             if (xs[k] - xs[k - 1]) * (xs[k + 1] - xs[k]) < 0
         )
         lateral_range = max(xs) - min(xs)
-        return changes >= 3 and lateral_range > 15.0
+        # Tightened: 4 direction reversals over 50px — ignores normal lane drift
+        return changes >= 4 and lateral_range > 50.0

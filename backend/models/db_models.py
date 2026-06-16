@@ -1,6 +1,10 @@
+import os
 from sqlalchemy import Column, Integer, String, Float, DateTime, JSON
 from sqlalchemy.orm import declarative_base
 from datetime import datetime
+
+SNAPSHOT_DIR = '/tmp/guardian_snapshots'
+os.makedirs(SNAPSHOT_DIR, exist_ok=True)
 
 Base = declarative_base()
 
@@ -19,12 +23,16 @@ class Violation(Base):
     id = Column(Integer, primary_key=True)
     plate = Column(String(20), index=True)
     track_id = Column(Integer)
+    vehicle_class = Column(String(20), default='vehicle')  # car / truck / person / etc.
     violation_type = Column(String(50), nullable=False)
     danger_points = Column(Integer, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
     location_x = Column(Float)
     location_y = Column(Float)
     camera_id = Column(String(50), default='CAM-01')
+    snapshot_path = Column(String(300))   # path to the frame captured at violation moment
+    fine_status = Column(String(20), default='pending')   # pending / issued / paid
+    fine_amount = Column(Float, default=0.0)
 
 
 class Alert(Base):

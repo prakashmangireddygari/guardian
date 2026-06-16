@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Optional
 from datetime import datetime
+import os
 
 from database import get_db
 from models.db_models import Vehicle, Violation, Alert
@@ -71,6 +73,84 @@ def top_offenders(limit: int = Query(10, le=50), db: Session = Depends(get_db)):
         .limit(limit)
         .all()
     )
+
+
+@router.get('/violations/{vid}/snapshot')
+def violation_snapshot(vid: int, db: Session = Depends(get_db)):
+    """Return the annotated frame captured at the moment of the violation."""
+    v = db.query(Violation).filter(Violation.id == vid).first()
+    if not v:
+        raise HTTPException(status_code=404, detail='Violation not found')
+    if not v.snapshot_path or not os.path.exists(v.snapshot_path):
+        raise HTTPException(status_code=404, detail='Snapshot not available')
+    return FileResponse(v.snapshot_path, media_type='image/jpeg',
+                        filename=f'violation_{vid}.jpg')
+
+
+@router.post('/violations/{vid}/issue-fine')
+def issue_fine(vid: int, amount: Optional[float] = None, db: Session = Depends(get_db)):
+    """
+    Issue a traffic fine for a violation.
+    Uses the default pre-calculated amount if none is provided.
+    Returns the full violation record as proof for the portal.
+    """
+    v = db.query(Violation).filter(Violation.id == vid).first()
+    if not v:
+        raise HTTPException(status_code=404, detail='Violation not found')
+    if v.fine_status == 'issued':
+        raise HTTPException(status_code=400, detail='Fine already issued')
+
+    v.fine_status = 'issued'
+    if amount is not None:
+        v.fine_amount = amount
+    db.commit()
+    db.refresh(v)
+
+    return {
+        'message': 'Fine issued successfully',
+        'violation_id': v.id,
+        'plate': v.plate,
+        'vehicle_class': v.vehicle_class,
+        'violation_type': v.violation_type,
+        'fine_amount': v.fine_amount,
+        'timestamp': v.timestamp,
+        'camera_id': v.camera_id,
+        'snapshot_url': f'/police/violations/{vid}/snapshot' if v.snapshot_path else None,
+    }
+
+
+@router.post('/violations/{vid}/mark-paid')
+def mark_paid(vid: int, db: Session = Depends(get_db)):
+    v = db.query(Violation).filter(Violation.id == vid).first()
+    if not v:
+        raise HTTPException(status_code=404, detail='Violation not found')
+    v.fine_status = 'paid'
+    db.commit()
+    return {'message': 'Marked as paid', 'violation_id': vid}
+
+
+@router.get('/violations/pending-fines')
+def pending_fines(db: Session = Depends(get_db)):
+    """All violations with issued but unpaid fines — for the payment portal."""
+    rows = (
+        db.query(Violation)
+        .filter(Violation.fine_status == 'issued')
+        .order_by(Violation.timestamp.desc())
+        .all()
+    )
+    return [
+        {
+            'violation_id': v.id,
+            'plate': v.plate,
+            'vehicle_class': v.vehicle_class,
+            'violation_type': v.violation_type,
+            'fine_amount': v.fine_amount,
+            'timestamp': v.timestamp,
+            'camera_id': v.camera_id,
+            'snapshot_url': f'/police/violations/{v.id}/snapshot' if v.snapshot_path else None,
+        }
+        for v in rows
+    ]
 
 
 @router.get('/alerts/recent', response_model=list[AlertOut])

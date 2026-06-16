@@ -711,11 +711,11 @@ header::after{
 /* ── State ───────────────────────────────────────────────────── */
 let ws = null
 let totalAlerts = 0, totalCollisions = 0, totalViolations = 0
-// plates: persists ALL plates seen during the entire session
-const plates = new Map()   // plate -> { score, class, firstSeen }
+const plates = new Map()
 let alertCount = 0
 const MAX_ALERTS = 30
 let videoReady = false
+let isProcessing = false   // gates all WS frame updates
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 const $ = id => document.getElementById(id)
@@ -763,8 +763,18 @@ function connectWS() {
 
   ws.onmessage = e => {
     const d = JSON.parse(e.data)
-    if (d.type === 'video_ended') { setLive(false); showToast('Video processing complete', 'success'); return }
-    if (d.type !== 'frame') return
+    if (d.type === 'stopped') {
+      isProcessing = false
+      setLive(false)
+      return
+    }
+    if (d.type === 'video_ended') {
+      isProcessing = false
+      setLive(false)
+      showToast('Video processing complete', 'success')
+      return
+    }
+    if (d.type !== 'frame' || !isProcessing) return
 
     // Frame counter
     $('hdr-frame').textContent = d.frame ?? '—'
@@ -937,6 +947,7 @@ $('btn-start').addEventListener('click', async () => {
   const res = await fetch('/video/start', { method:'POST' })
   if (!res.ok) { showToast((await res.json()).detail, 'error'); return }
 
+  isProcessing = true
   setLive(true)
   $('btn-stop').disabled = false
   $('btn-start').disabled = true
@@ -951,10 +962,15 @@ $('btn-start').addEventListener('click', async () => {
 
 /* ── Stop ────────────────────────────────────────────────────── */
 $('btn-stop').addEventListener('click', async () => {
-  await fetch('/video/stop', { method:'POST' })
+  isProcessing = false          // freeze UI immediately, before server replies
   setLive(false)
   $('btn-stop').disabled = true
-  $('btn-start').disabled = !videoReady
+  $('btn-start').disabled = true
+  await fetch('/video/stop', { method:'POST' })
+  // Clear file input so the same video file can be selected again
+  $('file-input').value = ''
+  $('file-name').textContent = 'No file selected'
+  videoReady = false
   showToast('Processing stopped')
 })
 
@@ -963,6 +979,7 @@ $('btn-cam').addEventListener('click', async () => {
   totalAlerts = 0; totalCollisions = 0; totalViolations = 0; alertCount = 0
   const res = await fetch('/video/camera/0', { method:'POST' })
   if (!res.ok) { showToast('Camera not available', 'error'); return }
+  isProcessing = true
   setLive(true)
   $('btn-stop').disabled = false
   $('btn-start').disabled = true

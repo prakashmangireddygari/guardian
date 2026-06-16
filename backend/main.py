@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, HTMLResponse
 import pathlib
 
-_executor = ThreadPoolExecutor(max_workers=2)
+_executor = ThreadPoolExecutor(max_workers=1)  # single detection thread avoids GPU/MPS contention
 
 load_dotenv()
 
@@ -56,21 +56,26 @@ app.include_router(stream_router)
 
 async def _process_loop():
     """
-    Reads frames at the video's native FPS.
-    Detection runs in a thread-pool so the event loop stays free for streaming.
+    Single loop: read → detect → display → pace.
+
+    Detection and display are coupled on purpose: each frame is annotated
+    before it is shown, so bounding boxes are always accurate to the current
+    frame position — no stale-box lag, no queue back-pressure fumbling.
+
+    Pacing:
+      • If detection is faster than the video FPS → sleep the remainder.
+      • If detection is slower → skip the frames we fell behind on so the
+        video stays at 1× wall-clock speed instead of slow-motion.
     """
     db   = SessionLocal()
     loop = asyncio.get_event_loop()
 
-    cap_fps       = pipeline._cap.get(cv2.CAP_PROP_FPS) or 30
-    frame_interval = 1.0 / cap_fps      # ideal seconds per frame
+    cap_fps        = pipeline._cap.get(cv2.CAP_PROP_FPS) or 30
+    frame_interval = 1.0 / cap_fps
+    wall_start     = loop.time()
 
     try:
         while True:
-            if pipeline._cap is None or not pipeline._cap.isOpened():
-                await asyncio.sleep(0.05)
-                continue
-
             t0 = loop.time()
 
             ret, frame = pipeline._cap.read()
@@ -78,20 +83,22 @@ async def _process_loop():
                 await manager.broadcast({'type': 'video_ended'})
                 break
 
-            # Run CPU-bound detection in thread pool — doesn't block the event loop
+            # Detect + annotate (runs on MPS/CUDA/CPU via thread pool)
             result = await loop.run_in_executor(_executor, pipeline.process_frame, frame)
 
-            # Persist violations
             for evt in result.get('behavior_events', []):
                 tid = evt['track_id']
-                plate = next(
-                    (v['plate'] for v in result['vehicles']
-                     if v['track_id'] == tid and v['plate']),
-                    f'UNKN-{tid}'
+                v_info = next(
+                    (v for v in result['vehicles'] if v['track_id'] == tid), {}
                 )
-                save_violation(db, plate, tid, evt['type'], evt.get('x'), evt.get('y'))
+                plate = v_info.get('plate') or f'UNKN-{tid}'
+                save_violation(
+                    db, plate, tid, evt['type'],
+                    evt.get('x'), evt.get('y'),
+                    vehicle_class=evt.get('vehicle_class', v_info.get('class', 'vehicle')),
+                    snapshot_path=evt.get('snapshot_path'),
+                )
 
-            # Persist critical alerts
             for a in result.get('distance_alerts', []):
                 if a['level'] == 'DANGER':
                     save_alert(db, 'distance', 'DANGER', a['vehicle_ids'], a)
@@ -99,7 +106,6 @@ async def _process_loop():
                 if a['level'] == 'CRITICAL':
                     save_alert(db, 'collision', 'CRITICAL', a['vehicle_ids'], a)
 
-            # Broadcast to WebSocket clients
             await manager.broadcast({
                 'type':             'frame',
                 'frame':            result['frame'],
@@ -116,11 +122,20 @@ async def _process_loop():
                 ],
             })
 
-            # Sleep the remainder of the frame interval to match video speed
             elapsed = loop.time() - t0
-            sleep   = frame_interval - elapsed
-            if sleep > 0.001:
-                await asyncio.sleep(sleep)
+
+            if elapsed < frame_interval:
+                # Faster than video FPS — sleep to avoid playing too fast
+                await asyncio.sleep(frame_interval - elapsed)
+            else:
+                # Slower than video FPS — skip frames to stay at 1× wall-clock speed
+                # Cap at 10 skipped frames so a single slow detection doesn't jump too far
+                frames_behind = min(int(elapsed / frame_interval) - 1, 10)
+                for _ in range(frames_behind):
+                    ok, _ = pipeline._cap.read()
+                    if not ok:
+                        break
+                    pipeline.frame_num += 1
 
     finally:
         db.close()
@@ -145,6 +160,7 @@ async def start_processing():
         raise HTTPException(status_code=400, detail='Processing already running')
     if _video_source is None:
         raise HTTPException(status_code=400, detail='No video source. POST /video/upload first')
+    pipeline.reset()
     pipeline.open(_video_source)
     _processing_task = asyncio.create_task(_process_loop())
     return {'message': 'Processing started'}
@@ -155,7 +171,14 @@ async def stop_processing():
     global _processing_task
     if _processing_task and not _processing_task.done():
         _processing_task.cancel()
+        try:
+            await _processing_task          # wait until fully cancelled
+        except (asyncio.CancelledError, Exception):
+            pass
+    _processing_task = None                 # clear so start can run immediately
     pipeline.close()
+    pipeline.reset()                        # wipe frame count, tracks, plates, etc.
+    await manager.broadcast({'type': 'stopped'})
     return {'message': 'Processing stopped'}
 
 

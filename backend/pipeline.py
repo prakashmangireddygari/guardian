@@ -23,8 +23,7 @@ def _score_color(score: int) -> tuple:
 
 
 class GuardianPipeline:
-    # Submit vehicle crop for plate OCR every N frames
-    PLATE_SUBMIT_EVERY = 20
+    PLATE_SUBMIT_EVERY = 5  # OCR every 5 frames (~0.17 s at 30 fps)
 
     def __init__(self):
         self.detector    = VehicleDetector()
@@ -35,9 +34,10 @@ class GuardianPipeline:
         self.plate_reader = PlateReader()
         self.weather     = WeatherContext(scenario=_WEATHER_SC)
 
-        self.frame_num   = 0
+        self.frame_num    = 0
         self._cap: Optional[cv2.VideoCapture] = None
         self.latest_jpeg: Optional[bytes] = None
+        self.latest_result: Optional[dict] = None  # most recent detection output
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -52,6 +52,15 @@ class GuardianPipeline:
             self._cap.release()
             self._cap = None
 
+    def reset(self):
+        """Clear all detection state so a new video starts fresh."""
+        self.frame_num    = 0
+        self.latest_jpeg  = None
+        self.latest_result = None
+        self.tracker      = VehicleTracker()
+        self.behavior     = BehaviorScorer(fps=_FPS)
+        self.plate_reader.reset()
+
     # ── Core frame processing (called from thread pool in main.py) ────────────
 
     def process_frame(self, frame: np.ndarray) -> dict:
@@ -60,6 +69,9 @@ class GuardianPipeline:
 
         detections = self.detector.detect(frame)
         vehicles   = self.tracker.update(detections, frame, self.frame_num)
+
+        # Build a quick lookup: track_id → vehicle info
+        v_map = {v['track_id']: v for v in vehicles}
 
         dist_alerts     = self.distance.compute(vehicles)
         coll_alerts     = self.collision.predict(vehicles)
@@ -71,31 +83,47 @@ class GuardianPipeline:
                 if v.get('class') != 'person':
                     self.plate_reader.submit(frame, v['bbox'], v['track_id'])
 
+        # Annotate first so the snapshot includes bounding boxes
+        vehicle_list = [
+            {
+                'track_id': v['track_id'],
+                'bbox':     [round(c, 1) for c in v['bbox']],
+                'center':   [round(c, 1) for c in v['center']],
+                'class':    v['class'],
+                'plate':    self.plate_reader.get(v['track_id']),
+                'score':    self.behavior.get_score(v['track_id']),
+            }
+            for v in vehicles
+        ]
+
         result = {
-            'frame':           self.frame_num,
-            'vehicle_count':   len(vehicles),
-            'distance_alerts': dist_alerts,
+            'frame':            self.frame_num,
+            'vehicle_count':    len(vehicles),
+            'distance_alerts':  dist_alerts,
             'collision_alerts': coll_alerts,
-            'behavior_events': behavior_events,
-            'scores':          self.behavior.get_all_scores(),
-            'weather':         self.weather.status(),
-            'vehicles': [
-                {
-                    'track_id': v['track_id'],
-                    'bbox':     [round(c, 1) for c in v['bbox']],
-                    'center':   [round(c, 1) for c in v['center']],
-                    'class':    v['class'],
-                    'plate':    self.plate_reader.get(v['track_id']),
-                    'score':    self.behavior.get_score(v['track_id']),
-                }
-                for v in vehicles
-            ],
+            'behavior_events':  behavior_events,
+            'scores':           self.behavior.get_all_scores(),
+            'weather':          self.weather.status(),
+            'vehicles':         vehicle_list,
         }
+
+        self.latest_result = result
 
         annotated = self.annotate(frame, result)
         ok, buf = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 80])
         if ok:
             self.latest_jpeg = buf.tobytes()
+
+        # Save a snapshot for every new violation event
+        if behavior_events and ok:
+            from models.db_models import SNAPSHOT_DIR
+            for evt in behavior_events:
+                tid = evt['track_id']
+                snap_path = f'{SNAPSHOT_DIR}/violation_f{self.frame_num}_t{tid}.jpg'
+                with open(snap_path, 'wb') as fh:
+                    fh.write(buf.tobytes())
+                evt['snapshot_path'] = snap_path
+                evt['vehicle_class'] = v_map.get(tid, {}).get('class', 'vehicle')
 
         self.frame_num += 1
         return result

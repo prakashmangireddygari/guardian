@@ -4,7 +4,7 @@ from collections import defaultdict
 
 
 class VehicleTracker:
-    def __init__(self, max_age=30, n_init=3):
+    def __init__(self, max_age=30, n_init=1):
         self.tracker = DeepSort(max_age=max_age, n_init=n_init)
         self.track_history: dict[int, list] = defaultdict(list)
 

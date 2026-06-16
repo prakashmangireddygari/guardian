@@ -6,12 +6,22 @@ from typing import Optional, List, Dict, Any
 class ViolationOut(BaseModel):
     id: int
     plate: Optional[str]
+    vehicle_class: Optional[str]
     violation_type: str
     danger_points: int
     timestamp: datetime
     camera_id: str
     location_x: Optional[float]
     location_y: Optional[float]
+    fine_status: Optional[str]
+    fine_amount: Optional[float]
+    has_snapshot: bool = False
+
+    @classmethod
+    def model_validate(cls, obj, **kwargs):
+        data = super().model_validate(obj, **kwargs)
+        data.has_snapshot = bool(getattr(obj, 'snapshot_path', None))
+        return data
 
     class Config:
         from_attributes = True
